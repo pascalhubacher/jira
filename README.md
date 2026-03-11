@@ -1,6 +1,8 @@
 # Jira Cloud MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the full **Jira Cloud REST API v3** to any MCP-compatible AI assistant. All **619 API operations** across **100 categories** are available as structured tools — from creating and searching issues to managing workflows, permissions, dashboards, and more.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the **Jira Cloud REST API v3** to any MCP-compatible AI assistant. The server exposes a curated set of **23 essential tools** covering the most common Jira workflows — searching and managing issues, comments, projects, users, transitions, and attachments.
+
+> **Note:** The full Jira OpenAPI spec contains 619 operations. Most MCP clients (including Claude Code) enforce a tool limit that prevents registering that many tools. The server therefore uses a whitelist to expose only the most useful operations. You can extend the whitelist in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) if needed.
 
 ---
 
@@ -16,6 +18,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that ex
   - [Gemini CLI](#gemini-cli)
   - [OpenCode](#opencode)
   - [GitHub Copilot (VS Code)](#github-copilot-vs-code)
+- [Tool Whitelist](#tool-whitelist)
 - [Functionality Reference](#functionality-reference)
   - [Issues](#issues)
   - [Issue Search](#issue-search)
@@ -324,9 +327,58 @@ After saving, reload VS Code. In Copilot Chat, switch to **Agent mode** to acces
 
 ---
 
+## Tool Whitelist
+
+Most MCP clients enforce a hard limit on the number of tools a server may register. Claude Code, for example, will silently drop the server if it advertises too many tools. Because the Jira OpenAPI spec contains **619 operations**, the server filters them down to a practical whitelist defined in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) (`_ALLOWED_OPERATION_IDS`).
+
+### Currently enabled tools (23)
+
+| Tool name (snake_case) | Jira operationId | Purpose |
+|---|---|---|
+| `search_for_issues_using_jql` | `searchForIssuesUsingJql` | Search issues via JQL (GET) |
+| `search_for_issues_using_jql_post` | `searchForIssuesUsingJqlPost` | Search issues via JQL (POST, supports large queries) |
+| `get_issue` | `getIssue` | Retrieve a single issue by key or ID |
+| `create_issue` | `createIssue` | Create a new issue |
+| `edit_issue` | `editIssue` | Update an existing issue |
+| `delete_issue` | `deleteIssue` | Delete an issue |
+| `get_transitions` | `getTransitions` | List available transitions for an issue |
+| `do_transition` | `doTransition` | Transition an issue to a new status |
+| `get_comments` | `getComments` | List comments on an issue |
+| `get_comment` | `getComment` | Retrieve a single comment |
+| `add_comment` | `addComment` | Add a comment to an issue |
+| `update_comment` | `updateComment` | Edit a comment |
+| `delete_comment` | `deleteComment` | Delete a comment |
+| `get_all_projects` | `getAllProjects` | List all visible projects |
+| `search_projects` | `searchProjects` | Search/filter projects |
+| `get_project` | `getProject` | Retrieve a single project |
+| `get_user` | `getUser` | Retrieve a user by account ID |
+| `find_users_assignable_to_issues` | `findUsersAssignableToIssues` | Find users that can be assigned to issues |
+| `get_create_issue_meta` | `getCreateIssueMeta` | Retrieve fields available when creating an issue |
+| `get_edit_issue_meta` | `getEditIssueMeta` | Retrieve fields available when editing an issue |
+| `get_priorities` | `getPriorities` | List all issue priorities |
+| `get_statuses` | `getStatuses` | List all issue statuses |
+| `get_attachment` | `getAttachment` | Retrieve attachment metadata |
+| `add_attachment` | `addAttachment` | Upload a file as an attachment |
+
+### Adding more tools
+
+To expose additional Jira API operations, add their `operationId` (from the OpenAPI spec) to `_ALLOWED_OPERATION_IDS` in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py):
+
+```python
+_ALLOWED_OPERATION_IDS: frozenset[str] = frozenset({
+    ...
+    "getWorklog",       # example: add worklog support
+    "addWorklog",
+})
+```
+
+Restart the MCP server after any change. Keep the total well below your client's tool limit (Claude Code: ~128 tools).
+
+---
+
 ## Functionality Reference
 
-This MCP server exposes **619 tools** derived directly from the official Jira Cloud REST API v3 OpenAPI specification. Below is a complete breakdown by category.
+This section documents the full Jira Cloud REST API v3. Operations not in the whitelist are still listed here for reference — add their `operationId` to `_ALLOWED_OPERATION_IDS` to enable them.
 
 ---
 

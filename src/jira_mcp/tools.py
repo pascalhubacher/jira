@@ -141,6 +141,50 @@ def _build_input_schema(
     return schema
 
 
+# Whitelist of Jira operationIds to expose as MCP tools.
+# Keeping this small avoids hitting Claude Code's tool limit.
+_ALLOWED_OPERATION_IDS: frozenset[str] = frozenset({
+    # Issue search & retrieval
+    "searchForIssuesUsingJql",
+    "searchForIssuesUsingJqlPost",
+    "getIssue",
+    # Issue create / edit
+    "createIssue",
+    "editIssue",
+    "deleteIssue",
+    # Issue transitions
+    "getTransitions",
+    "doTransition",
+    # Comments
+    "getComments",
+    "addComment",
+    "getComment",
+    "updateComment",
+    "deleteComment",
+    # Projects
+    "searchProjects",
+    "getProject",
+    "getAllProjects",
+    # Users & assignees
+    "getUser",
+    "findUsersAssignableToIssues",
+    # Issue fields & metadata
+    "getCreateIssueMeta",
+    "getEditIssueMeta",
+    # Priorities & statuses
+    "getPriorities",
+    "getStatuses",
+    # Attachments
+    "addAttachment",
+    "getAttachment",
+    # Sprints (Jira Software)
+    "getIssuesForSprint",
+    "getAllSprints",
+    "getBoard",
+    "getAllBoards",
+})
+
+
 class ToolRegistry:
     """
     Holds all dynamically generated tools from the Jira OpenAPI spec.
@@ -172,6 +216,10 @@ class ToolRegistry:
                 if not operation_id:
                     slug = re.sub(r"[^a-zA-Z0-9]", "_", path)
                     operation_id = f"{method}_{slug}"
+
+                # Skip operations not in the whitelist
+                if operation_id not in _ALLOWED_OPERATION_IDS:
+                    continue
 
                 tool_name = _sanitize_tool_name(operation_id)
 

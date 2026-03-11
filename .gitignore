@@ -1,0 +1,36 @@
+# Environment variables – never commit credentials
+.env
+
+# Python virtual environment (created by uv)
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Test & coverage artefacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# uv lock (optional – commit if you want reproducible installs)
+# uv.lock
+
+# Claude Code
+.claude/settings.json
+
+# Editor / OS artefacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/

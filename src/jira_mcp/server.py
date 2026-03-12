@@ -5,9 +5,8 @@ import json
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from dotenv import load_dotenv
 from mcp import types
@@ -21,10 +20,20 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_SENSITIVE_KEYS = frozenset({
-    "password", "passwd", "secret", "token", "apikey", "api_key",
-    "authorization", "credential", "credentials", "private_key",
-})
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "apikey",
+        "api_key",
+        "authorization",
+        "credential",
+        "credentials",
+        "private_key",
+    }
+)
 
 
 def _sanitize_response(data: Any) -> Any:
@@ -67,6 +76,7 @@ class _RateLimiter:
             else:
                 self._tokens -= 1.0
 
+
 # Path to the bundled Jira OpenAPI spec
 _SPEC_PATH = (
     Path(__file__).parent.parent.parent
@@ -75,22 +85,12 @@ _SPEC_PATH = (
 )
 
 
-@asynccontextmanager
-async def _lifespan(server: Server) -> AsyncIterator[dict]:
-    """Server lifespan: create a shared JiraClient for the server's lifetime."""
-    client = JiraClient()
-    try:
-        yield {"client": client}
-    finally:
-        await client.close()
-
-
 def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
     """Create and configure the MCP server with all Jira tools."""
     registry = ToolRegistry()
     registry.load_from_spec(spec_path)
 
-    server = Server("jira-cloud-mcp", lifespan=_lifespan)
+    server = Server("jira-cloud-mcp")
     rate_limiter = _RateLimiter()
 
     @server.list_tools()
@@ -98,9 +98,7 @@ def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
         return registry.tools
 
     @server.call_tool()
-    async def call_tool(
-        name: str, arguments: dict
-    ) -> types.CallToolResult:
+    async def call_tool(name: str, arguments: dict) -> types.CallToolResult:
         await rate_limiter.acquire()
 
         dispatch = registry.get_dispatch(name)
@@ -132,7 +130,7 @@ def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
         if has_body:
             body = arguments.get("body")
 
-        client: JiraClient = server.request_context.lifespan["client"]
+        client = JiraClient()
         try:
             result = await client.request(
                 http_method, api_path, path_params, query_params, body
@@ -142,15 +140,17 @@ def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
                 content=[types.TextContent(type="text", text=str(exc))],
                 isError=True,
             )
+        finally:
+            await client.close()
 
         sanitized = _sanitize_response(result)
         text = json.dumps(sanitized, indent=2, default=str)
         structured = sanitized if isinstance(sanitized, dict) else {"result": sanitized}
         # Return both unstructured (TextContent) and structured (dict) content.
         # The SDK validates structured against outputSchema when present.
-        return (
-            [types.TextContent(type="text", text=text)],
-            structured,
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=text)],
+            structuredContent=structured,
         )
 
     return server, registry

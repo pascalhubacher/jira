@@ -26,7 +26,9 @@ class TestCamelToSnake:
         assert _camel_to_snake("getIssue") == "get_issue"
 
     def test_multi_word(self):
-        assert _camel_to_snake("searchForIssuesUsingJql") == "search_for_issues_using_jql"
+        assert (
+            _camel_to_snake("searchForIssuesUsingJql") == "search_for_issues_using_jql"
+        )
 
     def test_already_lower(self):
         assert _camel_to_snake("getissue") == "getissue"
@@ -115,9 +117,7 @@ class TestResolveRef:
                 },
                 "Nested": {
                     "type": "object",
-                    "properties": {
-                        "inner": {"$ref": "#/components/schemas/IssueBean"}
-                    },
+                    "properties": {"inner": {"$ref": "#/components/schemas/IssueBean"}},
                 },
             }
         }
@@ -221,9 +221,16 @@ class TestSchemaToJsonSchema:
         assert result["required"] == ["id"]
 
     def test_object_additional_properties_bool(self):
+        # additionalProperties: false is never propagated — it would cause the
+        # MCP framework to reject all fields passed to the tool.
         schema = {"type": "object", "additionalProperties": False}
         result = _schema_to_json_schema(schema, {})
-        assert result["additionalProperties"] is False
+        assert "additionalProperties" not in result
+
+    def test_object_additional_properties_bool_true(self):
+        schema = {"type": "object", "additionalProperties": True}
+        result = _schema_to_json_schema(schema, {})
+        assert result["additionalProperties"] is True
 
     def test_object_additional_properties_schema(self):
         schema = {
@@ -234,22 +241,14 @@ class TestSchemaToJsonSchema:
         assert result["additionalProperties"] == {"type": "string"}
 
     def test_ref_is_resolved(self):
-        components = {
-            "schemas": {
-                "MyType": {"type": "integer"}
-            }
-        }
+        components = {"schemas": {"MyType": {"type": "integer"}}}
         schema = {"$ref": "#/components/schemas/MyType"}
         result = _schema_to_json_schema(schema, components)
         assert result["type"] == "integer"
 
     def test_ref_depth_limit(self):
         # At depth >= 3, $ref should NOT be resolved; returns {"type": "string"}
-        components = {
-            "schemas": {
-                "MyType": {"type": "integer"}
-            }
-        }
+        components = {"schemas": {"MyType": {"type": "integer"}}}
         schema = {"$ref": "#/components/schemas/MyType"}
         result = _schema_to_json_schema(schema, components, depth=3)
         # Should not recurse; fallback to {"type": "string"}
@@ -326,8 +325,18 @@ class TestBuildInputSchema:
 
     def test_multiple_params(self):
         params = [
-            {"name": "a", "in": "query", "required": True, "schema": {"type": "string"}},
-            {"name": "b", "in": "query", "required": False, "schema": {"type": "integer"}},
+            {
+                "name": "a",
+                "in": "query",
+                "required": True,
+                "schema": {"type": "string"},
+            },
+            {
+                "name": "b",
+                "in": "query",
+                "required": False,
+                "schema": {"type": "integer"},
+            },
             {"name": "c", "in": "path", "required": True, "schema": {"type": "string"}},
         ]
         schema = _build_input_schema(params, None, {})
@@ -339,7 +348,10 @@ class TestBuildInputSchema:
             "required": True,
             "content": {
                 "application/json": {
-                    "schema": {"type": "object", "properties": {"name": {"type": "string"}}}
+                    "schema": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
                 }
             },
         }
@@ -350,11 +362,7 @@ class TestBuildInputSchema:
     def test_request_body_optional(self):
         request_body = {
             "required": False,
-            "content": {
-                "application/json": {
-                    "schema": {"type": "object"}
-                }
-            },
+            "content": {"application/json": {"schema": {"type": "object"}}},
         }
         schema = _build_input_schema([], request_body, {})
         assert "body" in schema["properties"]
@@ -375,7 +383,9 @@ class TestBuildInputSchema:
             "content": {"application/json": {"schema": {"type": "object"}}},
         }
         schema = _build_input_schema([], request_body, {})
-        assert schema["properties"]["body"]["description"] == "Request body (JSON object)"
+        assert (
+            schema["properties"]["body"]["description"] == "Request body (JSON object)"
+        )
 
     def test_request_body_empty_schema_defaults_to_object(self):
         request_body = {
@@ -387,9 +397,7 @@ class TestBuildInputSchema:
 
     def test_param_with_ref_schema(self):
         components = {
-            "schemas": {
-                "IssueType": {"type": "string", "enum": ["bug", "task"]}
-            }
+            "schemas": {"IssueType": {"type": "string", "enum": ["bug", "task"]}}
         }
         params = [
             {
@@ -413,7 +421,9 @@ class TestBuildInputSchema:
         request_body = {
             "required": True,
             "content": {
-                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
             },
         }
         schema = _build_input_schema([], request_body, {})
@@ -482,10 +492,10 @@ class TestToolRegistry:
     def test_operation_id_converted_to_snake_case(self):
         spec = _make_minimal_spec(
             {
-                "/rest/api/3/search": {
+                "/rest/api/3/issue/{issueIdOrKey}": {
                     "get": {
-                        "operationId": "searchForIssuesUsingJql",
-                        "summary": "Search issues",
+                        "operationId": "getIssue",
+                        "summary": "Get issue",
                         "parameters": [],
                     }
                 }
@@ -494,7 +504,7 @@ class TestToolRegistry:
         path = _write_spec(spec)
         registry = ToolRegistry()
         registry.load_from_spec(path)
-        assert registry.tools[0].name == "search_for_issues_using_jql"
+        assert registry.tools[0].name == "get_issue"
 
     def test_multiple_methods_on_same_path(self):
         spec = _make_minimal_spec(
@@ -511,7 +521,9 @@ class TestToolRegistry:
                         "parameters": [],
                         "requestBody": {
                             "required": True,
-                            "content": {"application/json": {"schema": {"type": "object"}}},
+                            "content": {
+                                "application/json": {"schema": {"type": "object"}}
+                            },
                         },
                     },
                 }
@@ -519,7 +531,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         names = {t.name for t in registry.tools}
         assert "get_issues" in names
         assert "create_issue" in names
@@ -546,7 +558,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert len(registry.tools) == 2
         names = [t.name for t in registry.tools]
         assert len(set(names)) == 2  # both unique
@@ -564,7 +576,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert len(registry.tools) == 1
         assert registry.tools[0].name  # has some non-empty name
 
@@ -582,7 +594,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert registry.tools[0].description == "Get the X resource"
 
     def test_tool_description_combines_summary_and_description(self):
@@ -600,7 +612,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         desc = registry.tools[0].description
         assert "Short title" in desc
         assert "Longer explanation" in desc
@@ -620,7 +632,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert len(registry.tools[0].description) <= 1024
 
     def test_input_schema_has_path_params(self):
@@ -644,7 +656,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         schema = registry.tools[0].inputSchema
         assert "id" in schema["properties"]
         assert "id" in schema["required"]
@@ -703,7 +715,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         schema = registry.tools[0].inputSchema
         assert "projectKey" in schema["properties"]
         assert "maxResults" in schema["properties"]
@@ -740,7 +752,9 @@ class TestToolRegistry:
                         "parameters": [],
                         "requestBody": {
                             "required": True,
-                            "content": {"application/json": {"schema": {"type": "object"}}},
+                            "content": {
+                                "application/json": {"schema": {"type": "object"}}
+                            },
                         },
                     }
                 }
@@ -765,14 +779,22 @@ class TestToolRegistry:
                     "get": {"operationId": "getX", "summary": "G", "parameters": []},
                     "post": {"operationId": "postX", "summary": "P", "parameters": []},
                     "put": {"operationId": "putX", "summary": "U", "parameters": []},
-                    "delete": {"operationId": "deleteX", "summary": "D", "parameters": []},
-                    "patch": {"operationId": "patchX", "summary": "PA", "parameters": []},
+                    "delete": {
+                        "operationId": "deleteX",
+                        "summary": "D",
+                        "parameters": [],
+                    },
+                    "patch": {
+                        "operationId": "patchX",
+                        "summary": "PA",
+                        "parameters": [],
+                    },
                 }
             }
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert len(registry.tools) == 5
         methods = {registry.get_dispatch(t.name)[0] for t in registry.tools}
         assert methods == {"GET", "POST", "PUT", "DELETE", "PATCH"}
@@ -784,7 +806,7 @@ class TestToolRegistry:
         )
         path = _write_spec(spec)
         registry = ToolRegistry()
-        registry.load_from_spec(path)
+        registry.load_from_spec(path, use_allowlist=False)
         assert len(registry.tools[0].name) <= 64
 
     def test_tools_property_returns_list(self):
@@ -801,7 +823,7 @@ class TestToolRegistry:
         if not real_spec.exists():
             pytest.skip("Real Jira spec not found")
         registry = ToolRegistry()
-        registry.load_from_spec(real_spec)
+        registry.load_from_spec(real_spec, use_allowlist=False)
         assert len(registry.tools) > 400
         names = [t.name for t in registry.tools]
         assert len(set(names)) == len(names)  # all unique

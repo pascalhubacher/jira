@@ -34,15 +34,29 @@ def _resolve_ref(ref: str, components: dict[str, Any]) -> dict[str, Any]:
 
 
 def _schema_to_json_schema(
-    schema: dict[str, Any], components: dict[str, Any], depth: int = 0
+    schema: dict[str, Any],
+    components: dict[str, Any],
+    depth: int = 0,
+    for_output: bool = False,
 ) -> dict[str, Any]:
-    """Convert an OpenAPI schema fragment to a JSON Schema object."""
+    """Convert an OpenAPI schema fragment to a JSON Schema object.
+
+    Args:
+        schema: The OpenAPI schema fragment to convert.
+        components: The OpenAPI components dict for resolving ``$ref``\\ s.
+        depth: Current recursion depth (used to limit property expansion).
+        for_output: When *True* the schema is used as an MCP ``outputSchema``
+            (i.e. for validating API *responses*).  In that case
+            ``additionalProperties: false`` is **not** propagated because the
+            Jira API regularly returns extra fields not listed in the spec, and
+            a strict schema would cause false-negative validation failures.
+    """
     if not schema:
         return {"type": "string"}
 
     if "$ref" in schema and depth < 3:
         resolved = _resolve_ref(schema["$ref"], components)
-        return _schema_to_json_schema(resolved, components, depth + 1)
+        return _schema_to_json_schema(resolved, components, depth + 1, for_output)
 
     result: dict[str, Any] = {}
 
@@ -62,23 +76,42 @@ def _schema_to_json_schema(
         result["type"] = [result["type"], "null"]
 
     if typ == "array" and "items" in schema:
-        result["items"] = _schema_to_json_schema(schema["items"], components, depth + 1)
+        result["items"] = _schema_to_json_schema(
+            schema["items"], components, depth + 1, for_output
+        )
 
-    if typ == "object" or "properties" in schema or "allOf" in schema or "oneOf" in schema:
+    if (
+        typ == "object"
+        or "properties" in schema
+        or "allOf" in schema
+        or "oneOf" in schema
+    ):
         if "properties" in schema and depth < 2:
             props = {}
             for prop_name, prop_schema in schema["properties"].items():
-                props[prop_name] = _schema_to_json_schema(prop_schema, components, depth + 1)
+                props[prop_name] = _schema_to_json_schema(
+                    prop_schema, components, depth + 1, for_output
+                )
             result["properties"] = props
         if "required" in schema:
             result["required"] = schema["required"]
         if "additionalProperties" in schema:
             ap = schema["additionalProperties"]
-            result["additionalProperties"] = (
-                _schema_to_json_schema(ap, components, depth + 1)
-                if isinstance(ap, dict)
-                else ap
-            )
+            # Never propagate additionalProperties: false.
+            # - For output schemas: the live Jira API returns fields beyond
+            #   what the spec declares, so a strict schema causes false-negative
+            #   validation errors.
+            # - For input schemas: `additionalProperties: false` on a request
+            #   body bean (e.g. SearchAndReconcileRequestBean) is meant for the
+            #   Jira API itself, not for the MCP layer.  Propagating it causes
+            #   the MCP framework to reject every field the caller passes,
+            #   making the tool completely unusable.
+            if ap is not False:
+                result["additionalProperties"] = (
+                    _schema_to_json_schema(ap, components, depth + 1)
+                    if isinstance(ap, dict)
+                    else ap
+                )
         if not result.get("type") and (result.get("properties") or depth == 0):
             result["type"] = "object"
 
@@ -106,7 +139,9 @@ def _build_input_schema(
             raw_schema = _resolve_ref(raw_schema["$ref"], components)
 
         prop = _schema_to_json_schema(raw_schema, components)
-        prop["description"] = param.get("description", f"({param.get('in', 'query')} parameter)")
+        prop["description"] = param.get(
+            "description", f"({param.get('in', 'query')} parameter)"
+        )
 
         properties[name] = prop
         if param.get("required", False):
@@ -143,46 +178,47 @@ def _build_input_schema(
 
 # Whitelist of Jira operationIds to expose as MCP tools.
 # Keeping this small avoids hitting Claude Code's tool limit.
-_ALLOWED_OPERATION_IDS: frozenset[str] = frozenset({
-    # Issue search & retrieval
-    "searchForIssuesUsingJql",
-    "searchForIssuesUsingJqlPost",
-    "getIssue",
-    # Issue create / edit
-    "createIssue",
-    "editIssue",
-    "deleteIssue",
-    # Issue transitions
-    "getTransitions",
-    "doTransition",
-    # Comments
-    "getComments",
-    "addComment",
-    "getComment",
-    "updateComment",
-    "deleteComment",
-    # Projects
-    "searchProjects",
-    "getProject",
-    "getAllProjects",
-    # Users & assignees
-    "getUser",
-    "findUsersAssignableToIssues",
-    # Issue fields & metadata
-    "getCreateIssueMeta",
-    "getEditIssueMeta",
-    # Priorities & statuses
-    "getPriorities",
-    "getStatuses",
-    # Attachments
-    "addAttachment",
-    "getAttachment",
-    # Sprints (Jira Software)
-    "getIssuesForSprint",
-    "getAllSprints",
-    "getBoard",
-    "getAllBoards",
-})
+_ALLOWED_OPERATION_IDS: frozenset[str] = frozenset(
+    {
+        # Issue search & retrieval — use the current non-deprecated endpoint
+        "searchAndReconsileIssuesUsingJqlPost",
+        "getIssue",
+        # Issue create / edit
+        "createIssue",
+        "editIssue",
+        "deleteIssue",
+        # Issue transitions
+        "getTransitions",
+        "doTransition",
+        # Comments
+        "getComments",
+        "addComment",
+        "getComment",
+        "updateComment",
+        "deleteComment",
+        # Projects
+        "searchProjects",
+        "getProject",
+        "getAllProjects",
+        # Users & assignees
+        "getUser",
+        "findUsersAssignableToIssues",
+        # Issue fields & metadata
+        "getCreateIssueMeta",
+        "getEditIssueMeta",
+        # Priorities & statuses
+        "getPriorities",
+        "getStatuses",
+        # Attachments
+        "addAttachment",
+        "getAttachment",
+        # Sprints (Jira Software)
+        "getIssuesForSprint",
+        "getAllSprints",
+        "getBoard",
+        "getAllBoards",
+    }
+)
 
 
 class ToolRegistry:
@@ -195,8 +231,15 @@ class ToolRegistry:
         self._tools: list[types.Tool] = []
         self._dispatch: dict[str, tuple[str, str, list[dict[str, Any]], bool]] = {}
 
-    def load_from_spec(self, spec_path: Path) -> None:
-        """Parse the OpenAPI spec and populate tools."""
+    def load_from_spec(self, spec_path: Path, use_allowlist: bool = True) -> None:
+        """Parse the OpenAPI spec and populate tools.
+
+        Args:
+            spec_path: Path to the OpenAPI JSON spec file.
+            use_allowlist: When True (default), only operations in
+                ``_ALLOWED_OPERATION_IDS`` are exposed as tools.  Set to
+                False to load every operation (useful for testing).
+        """
         with open(spec_path) as f:
             spec = json.load(f)
 
@@ -217,8 +260,8 @@ class ToolRegistry:
                     slug = re.sub(r"[^a-zA-Z0-9]", "_", path)
                     operation_id = f"{method}_{slug}"
 
-                # Skip operations not in the whitelist
-                if operation_id not in _ALLOWED_OPERATION_IDS:
+                # Skip operations not in the whitelist (unless disabled)
+                if use_allowlist and operation_id not in _ALLOWED_OPERATION_IDS:
                     continue
 
                 tool_name = _sanitize_tool_name(operation_id)
@@ -248,13 +291,23 @@ class ToolRegistry:
                     resp_content = resp.get("content", {})
                     if not resp_content:
                         continue
-                    json_resp = (
-                        resp_content.get("application/json")
-                        or next(iter(resp_content.values()), {})
+                    json_resp = resp_content.get("application/json") or next(
+                        iter(resp_content.values()), {}
                     )
                     resp_schema = json_resp.get("schema", {})
                     if resp_schema:
-                        output_schema = _schema_to_json_schema(resp_schema, components, depth=1)
+                        output_schema = _schema_to_json_schema(
+                            resp_schema, components, depth=1, for_output=True
+                        )
+                        # MCP requires outputSchema to be type "object".
+                        # Wrap array responses so the schema remains valid.
+                        if output_schema.get("type") == "array":
+                            output_schema = {
+                                "type": "object",
+                                "properties": {
+                                    "result": output_schema,
+                                },
+                            }
                         break
 
                 summary = operation.get("summary", "")

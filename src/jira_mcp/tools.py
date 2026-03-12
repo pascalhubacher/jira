@@ -160,7 +160,13 @@ def _build_input_schema(
         )
         body_schema = json_content.get("schema", {})
         if body_schema:
-            resolved_body = _schema_to_json_schema(body_schema, components, depth=1)
+            # Use depth=0 so that a top-level $ref is resolved and its properties
+            # are fully expanded (depth < 2 guard allows one more level of nesting).
+            # Previously depth=1 caused the $ref resolution to consume depth 0→1,
+            # leaving properties at depth 2 which were then silently dropped,
+            # resulting in an opaque "body: {}" schema that gave Claude no guidance
+            # on what fields to pass (e.g. jql, maxResults, fields).
+            resolved_body = _schema_to_json_schema(body_schema, components, depth=0)
         else:
             resolved_body = {"type": "object"}
 

@@ -1,8 +1,8 @@
 # Jira Cloud MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the **Jira Cloud REST API v3** to any MCP-compatible AI assistant. The server exposes a curated set of **23 essential tools** covering the most common Jira workflows — searching and managing issues, comments, projects, users, transitions, and attachments.
+A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that exposes the **Jira Cloud REST API v3** to any MCP-compatible AI assistant. The server exposes a curated set of **62 tools** covering the full lifecycle of stories, epics, bugs, and sprints — including search, create/edit/delete, transitions, comments, worklogs, issue links, watchers, bulk operations, changelogs, and more.
 
-> **Note:** The full Jira OpenAPI spec contains 619 operations. Most MCP clients (including Claude Code) enforce a tool limit that prevents registering that many tools. The server therefore uses a whitelist to expose only the most useful operations. You can extend the whitelist in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) if needed.
+> **Note:** The full Jira OpenAPI spec contains 619 operations. Most MCP clients (including Claude Code) enforce a tool limit that prevents registering that many tools. The server therefore uses an allowlist to expose only the most useful operations. You can extend the allowlist in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) if needed.
 
 ---
 
@@ -18,7 +18,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that ex
   - [Gemini CLI](#gemini-cli)
   - [OpenCode](#opencode)
   - [GitHub Copilot (VS Code)](#github-copilot-vs-code)
-- [Tool Whitelist](#tool-whitelist)
+- [Tool Allowlist](#tool-allowlist)
 - [Functionality Reference](#functionality-reference)
   - [Issues](#issues)
   - [Issue Search](#issue-search)
@@ -327,38 +327,81 @@ After saving, reload VS Code. In Copilot Chat, switch to **Agent mode** to acces
 
 ---
 
-## Tool Whitelist
+## Tool Allowlist
 
-Most MCP clients enforce a hard limit on the number of tools a server may register. Claude Code, for example, will silently drop the server if it advertises too many tools. Because the Jira OpenAPI spec contains **619 operations**, the server filters them down to a practical whitelist defined in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) (`_ALLOWED_OPERATION_IDS`).
+Most MCP clients enforce a hard limit on the number of tools a server may register. Claude Code, for example, will silently drop the server if it advertises too many tools. Because the Jira OpenAPI spec contains **619 operations**, the server filters them down to a practical allowlist defined in [`src/jira_mcp/tools.py`](src/jira_mcp/tools.py) (`_ALLOWED_OPERATION_IDS`).
 
-### Currently enabled tools (23)
+### Currently enabled tools (62)
 
-| Tool name (snake_case) | Jira operationId | Purpose |
-|---|---|---|
-| `search_for_issues_using_jql` | `searchForIssuesUsingJql` | Search issues via JQL (GET) |
-| `search_for_issues_using_jql_post` | `searchForIssuesUsingJqlPost` | Search issues via JQL (POST, supports large queries) |
-| `get_issue` | `getIssue` | Retrieve a single issue by key or ID |
-| `create_issue` | `createIssue` | Create a new issue |
-| `edit_issue` | `editIssue` | Update an existing issue |
-| `delete_issue` | `deleteIssue` | Delete an issue |
-| `get_transitions` | `getTransitions` | List available transitions for an issue |
-| `do_transition` | `doTransition` | Transition an issue to a new status |
-| `get_comments` | `getComments` | List comments on an issue |
-| `get_comment` | `getComment` | Retrieve a single comment |
-| `add_comment` | `addComment` | Add a comment to an issue |
-| `update_comment` | `updateComment` | Edit a comment |
-| `delete_comment` | `deleteComment` | Delete a comment |
-| `get_all_projects` | `getAllProjects` | List all visible projects |
-| `search_projects` | `searchProjects` | Search/filter projects |
-| `get_project` | `getProject` | Retrieve a single project |
-| `get_user` | `getUser` | Retrieve a user by account ID |
-| `find_users_assignable_to_issues` | `findUsersAssignableToIssues` | Find users that can be assigned to issues |
-| `get_create_issue_meta` | `getCreateIssueMeta` | Retrieve fields available when creating an issue |
-| `get_edit_issue_meta` | `getEditIssueMeta` | Retrieve fields available when editing an issue |
-| `get_priorities` | `getPriorities` | List all issue priorities |
-| `get_statuses` | `getStatuses` | List all issue statuses |
-| `get_attachment` | `getAttachment` | Retrieve attachment metadata |
-| `add_attachment` | `addAttachment` | Upload a file as an attachment |
+| Tool name (snake_case) | Purpose |
+|---|---|
+| `search_and_reconsile_issues_using_jql_post` | Search issues via JQL (POST, supports large queries) |
+| `get_issue` | Retrieve a single issue by key or ID |
+| `bulk_fetch_issues` | Fetch multiple issues by key or ID in one request |
+| `create_issue` | Create a new issue (story, bug, epic, task, etc.) |
+| `create_issues` | Bulk-create multiple issues in one request |
+| `edit_issue` | Update fields on an existing issue |
+| `delete_issue` | Delete an issue |
+| `assign_issue` | Assign or unassign an issue to a user |
+| `get_transitions` | List available workflow transitions for an issue |
+| `do_transition` | Move an issue to a new status via a workflow transition |
+| `submit_bulk_edit` | Edit multiple issues simultaneously |
+| `submit_bulk_delete` | Delete multiple issues at once |
+| `submit_bulk_move` | Move issues between projects |
+| `submit_bulk_transition` | Transition multiple issues to a new status |
+| `get_comments` | List comments on an issue |
+| `get_comment` | Retrieve a single comment |
+| `add_comment` | Add a comment to an issue |
+| `update_comment` | Edit a comment |
+| `delete_comment` | Delete a comment |
+| `link_issues` | Link two issues (blocks, duplicates, relates to, etc.) |
+| `get_issue_link` | Get an issue link by ID |
+| `get_issue_link_types` | List all available link types |
+| `delete_issue_link` | Remove a link between issues |
+| `get_remote_issue_links` | List all remote links on an issue |
+| `create_or_update_remote_issue_link` | Create or update a remote link (e.g. Confluence page) |
+| `get_remote_issue_link_by_id` | Get a specific remote link |
+| `delete_remote_issue_link_by_id` | Delete a remote link by ID |
+| `get_issue_worklog` | List all worklogs on an issue |
+| `add_worklog` | Log time spent on an issue |
+| `get_worklog` | Get a specific worklog entry |
+| `update_worklog` | Update a worklog entry |
+| `delete_worklog` | Delete a worklog entry |
+| `get_issue_watchers` | Get all users watching an issue |
+| `add_watcher` | Add a user as a watcher |
+| `remove_watcher` | Remove a watcher |
+| `get_votes` | Get voters for an issue |
+| `add_vote` | Vote for an issue |
+| `remove_vote` | Remove your vote |
+| `get_change_logs` | Get the full history of changes for an issue |
+| `get_change_logs_by_ids` | Fetch changelogs for specific IDs |
+| `get_issue_property` | Get a custom property value on an issue |
+| `set_issue_property` | Set a custom property on an issue |
+| `delete_issue_property` | Delete an issue property |
+| `add_attachment` | Upload a file attachment to an issue |
+| `get_attachment` | Retrieve attachment metadata |
+| `get_all_projects` | List all visible projects |
+| `search_projects` | Search/filter projects |
+| `get_project` | Retrieve a single project |
+| `get_project_versions` | List all versions (releases) in a project |
+| `create_version` | Create a project version |
+| `get_project_components` | List all components in a project |
+| `create_component` | Create a project component |
+| `get_user` | Retrieve a user by account ID |
+| `find_users` | Find users by display name or email |
+| `find_users_assignable_to_issues` | Find users assignable to a specific issue |
+| `find_bulk_assignable_users` | Find assignable users across multiple projects |
+| `get_create_issue_meta` | Get fields available when creating an issue |
+| `get_edit_issue_meta` | Get fields available when editing an issue |
+| `get_fields` | List all fields (system + custom) |
+| `get_issue_types_for_project` | List issue types available in a project |
+| `get_priorities` | List all issue priorities |
+| `get_statuses` | List all issue statuses |
+| `get_all_labels` | List all labels used across Jira |
+| `get_issues_for_sprint` | List issues in a sprint |
+| `get_all_sprints` | List all sprints for a board |
+| `get_board` | Get a Jira Software board by ID |
+| `get_all_boards` | List all Jira Software boards |
 
 ### Adding more tools
 
@@ -367,8 +410,7 @@ To expose additional Jira API operations, add their `operationId` (from the Open
 ```python
 _ALLOWED_OPERATION_IDS: frozenset[str] = frozenset({
     ...
-    "getWorklog",       # example: add worklog support
-    "addWorklog",
+    "getWorkflowTransitionProperties",   # example: expose workflow transition properties
 })
 ```
 
@@ -1539,7 +1581,7 @@ To generate an API token:
 
 This server is fully compliant with the [MCP specification](https://modelcontextprotocol.io/specification/latest) security requirements:
 
-- **Input validation** — all tool arguments are validated against their JSON Schema before execution (via the MCP Python SDK's built-in `validate_input`).
+- **Input validation** — all tool arguments are validated against their JSON Schema before execution (via `jsonschema.validate` before dispatching to the Jira API).
 - **Rate limiting** — a token-bucket rate limiter (default: 10 calls/sec) protects against runaway tool invocations. Tune with `JIRA_MCP_RATE_LIMIT`.
 - **Output sanitization** — every Jira API response is recursively scanned before being returned. Values for sensitive keys (`password`, `token`, `secret`, `apikey`, `authorization`, `credential`, etc.) are replaced with `[REDACTED]`. Strings longer than 10,000 characters are truncated.
 - **Structured output validation** — tools that have a defined response schema (`outputSchema`) have their structured results validated by the SDK before they reach the client.

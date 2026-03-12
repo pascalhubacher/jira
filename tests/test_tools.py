@@ -597,7 +597,7 @@ class TestToolRegistry:
         registry.load_from_spec(path, use_allowlist=False)
         assert registry.tools[0].description == "Get the X resource"
 
-    def test_tool_description_combines_summary_and_description(self):
+    def test_tool_description_ignores_long_description_field(self):
         spec = _make_minimal_spec(
             {
                 "/x": {
@@ -614,10 +614,11 @@ class TestToolRegistry:
         registry = ToolRegistry()
         registry.load_from_spec(path, use_allowlist=False)
         desc = registry.tools[0].description
+        # Description uses only the summary to keep the tools/list response small
+        assert desc is not None
         assert "Short title" in desc
-        assert "Longer explanation" in desc
 
-    def test_tool_description_truncated_at_1024(self):
+    def test_tool_description_truncated_at_256(self):
         long_desc = "x" * 2000
         spec = _make_minimal_spec(
             {
@@ -633,7 +634,9 @@ class TestToolRegistry:
         path = _write_spec(spec)
         registry = ToolRegistry()
         registry.load_from_spec(path, use_allowlist=False)
-        assert len(registry.tools[0].description) <= 1024
+        desc = registry.tools[0].description
+        assert desc is not None
+        assert len(desc) <= 256
 
     def test_input_schema_has_path_params(self):
         spec = _make_minimal_spec(

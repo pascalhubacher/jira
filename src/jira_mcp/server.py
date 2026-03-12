@@ -159,12 +159,8 @@ def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
 
         sanitized = _sanitize_response(result)
         text = json.dumps(sanitized, indent=2, default=str)
-        structured = sanitized if isinstance(sanitized, dict) else {"result": sanitized}
-        # Return both unstructured (TextContent) and structured (dict) content.
-        # The SDK validates structured against outputSchema when present.
         return types.CallToolResult(
             content=[types.TextContent(type="text", text=text)],
-            structuredContent=structured,
         )
 
     return server, registry

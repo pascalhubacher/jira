@@ -67,9 +67,13 @@ def _schema_to_json_schema(
         result["format"] = schema["format"]
     if "enum" in schema:
         result["enum"] = schema["enum"]
-    if "description" in schema:
-        result["description"] = schema["description"]
-    if "default" in schema:
+    # Only include description at depth 0 (top-level body schema); omit from
+    # nested properties to keep the tools/list response size small.
+    if "description" in schema and depth == 0:
+        result["description"] = schema["description"][:120]
+    # Omit default values from nested schemas — they bloat the response without
+    # adding value for an AI client.
+    if "default" in schema and depth == 0:
         result["default"] = schema["default"]
     if schema.get("nullable") and isinstance(result.get("type"), str):
         # OpenAPI 3.0 nullable:true → JSON Schema type array with "null"
@@ -139,9 +143,9 @@ def _build_input_schema(
             raw_schema = _resolve_ref(raw_schema["$ref"], components)
 
         prop = _schema_to_json_schema(raw_schema, components)
-        prop["description"] = param.get(
-            "description", f"({param.get('in', 'query')} parameter)"
-        )
+        raw_desc = param.get("description", f"({param.get('in', 'query')} parameter)")
+        # Truncate parameter descriptions to keep the tools/list response small
+        prop["description"] = raw_desc[:120]
 
         properties[name] = prop
         if param.get("required", False):
@@ -329,52 +333,20 @@ class ToolRegistry:
                 request_body = operation.get("requestBody")
                 input_schema = _build_input_schema(all_params, request_body, components)
 
-                # Extract output schema from first successful response (200 or 201)
-                output_schema: dict[str, Any] | None = None
-                responses = operation.get("responses", {})
-                for status_code in ("200", "201"):
-                    resp = responses.get(status_code, {})
-                    if "$ref" in resp:
-                        resp = _resolve_ref(resp["$ref"], components)
-                    resp_content = resp.get("content", {})
-                    if not resp_content:
-                        continue
-                    json_resp = resp_content.get("application/json") or next(
-                        iter(resp_content.values()), {}
-                    )
-                    resp_schema = json_resp.get("schema", {})
-                    if resp_schema:
-                        output_schema = _schema_to_json_schema(
-                            resp_schema, components, depth=1, for_output=True
-                        )
-                        # MCP requires outputSchema to be type "object".
-                        # Wrap array responses so the schema remains valid.
-                        if output_schema.get("type") == "array":
-                            output_schema = {
-                                "type": "object",
-                                "properties": {
-                                    "result": output_schema,
-                                },
-                            }
-                        break
-
                 summary = operation.get("summary", "")
                 description = operation.get("description", "")
-                if summary and description and summary != description:
-                    tool_description = f"{summary}\n\n{description}"
-                else:
-                    tool_description = summary or description or tool_name
-
-                # Trim description to avoid overly long tool metadata
-                if len(tool_description) > 1024:
-                    tool_description = tool_description[:1021] + "..."
+                # Use only the summary as the tool description to keep the
+                # tools/list response small. The full API description is
+                # verbose and bloats the response beyond client limits.
+                tool_description = summary or description.split("\n")[0] or tool_name
+                # Hard cap as a safety net
+                if len(tool_description) > 256:
+                    tool_description = tool_description[:253] + "..."
 
                 tool = types.Tool(
                     name=tool_name,
-                    title=summary or None,
                     description=tool_description,
                     inputSchema=input_schema,
-                    outputSchema=output_schema,
                 )
                 self._tools.append(tool)
                 self._dispatch[tool_name] = (

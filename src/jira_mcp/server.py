@@ -79,12 +79,8 @@ class _RateLimiter:
                 self._tokens -= 1.0
 
 
-# Path to the bundled Jira OpenAPI spec
-_SPEC_PATH = (
-    Path(__file__).parent.parent.parent
-    / "Building MCP with LLMs"
-    / "jira-swagger-v3.v3.json"
-)
+# Path to the Jira OpenAPI spec bundled inside the package directory
+_SPEC_PATH = Path(__file__).parent / "jira-swagger-v3.v3.json"
 
 
 def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:

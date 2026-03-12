@@ -176,43 +176,91 @@ def _build_input_schema(
     return schema
 
 
-# Whitelist of Jira operationIds to expose as MCP tools.
-# Keeping this small avoids hitting Claude Code's tool limit.
+# Allowlist of Jira operationIds to expose as MCP tools.
+# Covers all common actions around stories, epics, bugs, and sprints.
 _ALLOWED_OPERATION_IDS: frozenset[str] = frozenset(
     {
-        # Issue search & retrieval — use the current non-deprecated endpoint
+        # ── Issue search & retrieval ──────────────────────────────────────
         "searchAndReconsileIssuesUsingJqlPost",
         "getIssue",
-        # Issue create / edit
+        "bulkFetchIssues",
+        # ── Issue create / edit / delete ──────────────────────────────────
         "createIssue",
+        "createIssues",  # bulk create
         "editIssue",
         "deleteIssue",
-        # Issue transitions
+        "assignIssue",
+        # ── Issue transitions ─────────────────────────────────────────────
         "getTransitions",
         "doTransition",
-        # Comments
+        # ── Bulk operations ───────────────────────────────────────────────
+        "submitBulkEdit",
+        "submitBulkDelete",
+        "submitBulkMove",
+        "submitBulkTransition",
+        # ── Comments ──────────────────────────────────────────────────────
         "getComments",
         "addComment",
         "getComment",
         "updateComment",
         "deleteComment",
-        # Projects
+        # ── Issue links ───────────────────────────────────────────────────
+        "linkIssues",
+        "getIssueLink",
+        "getIssueLinkTypes",
+        "deleteIssueLink",
+        # ── Remote issue links ────────────────────────────────────────────
+        "getRemoteIssueLinks",
+        "createOrUpdateRemoteIssueLink",
+        "getRemoteIssueLinkById",
+        "deleteRemoteIssueLinkById",
+        # ── Worklogs ──────────────────────────────────────────────────────
+        "getIssueWorklog",
+        "addWorklog",
+        "getWorklog",
+        "updateWorklog",
+        "deleteWorklog",
+        # ── Watchers & votes ──────────────────────────────────────────────
+        "getIssueWatchers",
+        "addWatcher",
+        "removeWatcher",
+        "getVotes",
+        "addVote",
+        "removeVote",
+        # ── Changelogs ────────────────────────────────────────────────────
+        "getChangeLogs",
+        "getChangeLogsByIds",
+        # ── Issue properties ──────────────────────────────────────────────
+        "getIssueProperty",
+        "setIssueProperty",
+        "deleteIssueProperty",
+        # ── Attachments ───────────────────────────────────────────────────
+        "addAttachment",
+        "getAttachment",
+        # ── Projects ──────────────────────────────────────────────────────
         "searchProjects",
         "getProject",
         "getAllProjects",
-        # Users & assignees
+        # ── Project versions & components ─────────────────────────────────
+        "getProjectVersions",
+        "createVersion",
+        "getProjectComponents",
+        "createComponent",
+        # ── Users & assignees ─────────────────────────────────────────────
         "getUser",
+        "findUsers",
         "findUsersAssignableToIssues",
-        # Issue fields & metadata
+        "findBulkAssignableUsers",
+        # ── Issue fields & metadata ───────────────────────────────────────
         "getCreateIssueMeta",
         "getEditIssueMeta",
-        # Priorities & statuses
+        "getFields",
+        "getIssueTypesForProject",
+        # ── Priorities, statuses & labels ─────────────────────────────────
         "getPriorities",
         "getStatuses",
-        # Attachments
-        "addAttachment",
-        "getAttachment",
-        # Sprints (Jira Software)
+        "getAllLabels",
+        # ── Sprints & boards (Jira Software / Agile API) ──────────────────
         "getIssuesForSprint",
         "getAllSprints",
         "getBoard",
@@ -339,6 +387,10 @@ class ToolRegistry:
     @property
     def tools(self) -> list[types.Tool]:
         return self._tools
+
+    def get_tool(self, tool_name: str) -> types.Tool | None:
+        """Return the Tool definition for *tool_name*, or None if not found."""
+        return next((t for t in self._tools if t.name == tool_name), None)
 
     def get_dispatch(
         self, tool_name: str

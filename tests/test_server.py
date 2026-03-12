@@ -193,13 +193,16 @@ class TestCallToolArgumentRouting:
     """Tests that call_tool correctly splits arguments into path / query / body."""
 
     @pytest.mark.asyncio
-    async def test_unknown_tool_raises_value_error(self):
+    async def test_unknown_tool_returns_error_result(self):
         spec_path = _simple_spec()
         server, _ = create_server(spec_path)
         handler = server.request_handlers[types.CallToolRequest]
         with patch.dict(os.environ, _env(), clear=True):
             result = await handler(_make_call_tool_request("no_such_tool", {}))
-            # MCP wraps errors as isError=True in the result
+            # The handler raises McpError(-32602); the SDK's call_tool decorator
+            # catches all exceptions and wraps them as isError=True at the handler
+            # level.  At the transport level the McpError is re-raised and produces
+            # a proper JSON-RPC error response instead of a soft tool result.
             assert result.root.isError is True
 
     @pytest.mark.asyncio

@@ -8,10 +8,12 @@ import time
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 from dotenv import load_dotenv
 from mcp import types
-from mcp.server import Server
+from mcp.server import NotificationOptions, Server
 from mcp.server.stdio import stdio_server
+from mcp.shared.exceptions import McpError
 
 from .client import JiraClient
 from .tools import ToolRegistry
@@ -103,12 +105,28 @@ def create_server(spec_path: Path = _SPEC_PATH) -> tuple[Server, ToolRegistry]:
 
         dispatch = registry.get_dispatch(name)
         if dispatch is None:
-            return types.CallToolResult(
-                content=[types.TextContent(type="text", text=f"Unknown tool: {name}")],
-                isError=True,
+            # Raise a proper JSON-RPC -32602 (Invalid Params) protocol error so
+            # the client receives a structured error response, not a soft isError result.
+            raise McpError(
+                types.ErrorData(code=-32602, message=f"Unknown tool: {name}")
             )
 
         http_method, api_path, params, has_body = dispatch
+
+        # Validate arguments against the tool's inputSchema before dispatching.
+        tool_def = registry.get_tool(name)
+        if tool_def is not None:
+            try:
+                jsonschema.validate(instance=arguments, schema=tool_def.inputSchema)
+            except jsonschema.ValidationError as exc:
+                return types.CallToolResult(
+                    content=[
+                        types.TextContent(
+                            type="text", text=f"Input validation error: {exc.message}"
+                        )
+                    ],
+                    isError=True,
+                )
 
         # Separate path, query params and body from arguments
         path_params: dict = {}
@@ -165,7 +183,12 @@ async def run_server() -> None:
         await server.run(
             read_stream,
             write_stream,
-            server.create_initialization_options(),
+            # tools_changed=False: tools are static after startup; we never
+            # emit notifications/tools/list_changed, so we advertise listChanged
+            # as False to be honest with clients.
+            server.create_initialization_options(
+                notification_options=NotificationOptions(tools_changed=False)
+            ),
         )
 
 
